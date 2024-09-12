@@ -1,8 +1,6 @@
-
 using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 using Swashbuckle.AspNetCore.SwaggerUI;
-using RestSharp;
 using WeatherForecastApp.Data;
 using WeatherForecastApp.Services;
 using WeatherForecastApp.Services.Interfaces;
@@ -33,14 +31,6 @@ catch
 
 builder.Services.Configure<AppConfig>(builder.Configuration);
 
-//builder.Services.AddDbContext<AppDbContext>(options => {
-//    options.UseSqlServer(
-//        CryptographyHelper.Decrypt_AES(builder.Configuration["ConnectionStrings:DefaultConnection"]),
-//        sqlServerOptionsAction: sqlOptions =>
-//        { sqlOptions.EnableRetryOnFailure(); });
-
-//});
-
 // Adding services to the container.
 builder.Services.AddScoped<WeatherService>();
 builder.Services.AddScoped<IWeatherService, CachedWeatherService>();
@@ -50,7 +40,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddControllers();
-builder.Services.AddTransient<IRestClient, RestClient>();
+
 
 builder.Services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 

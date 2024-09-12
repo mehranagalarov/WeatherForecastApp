@@ -1,6 +1,6 @@
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
-using System.Text.Json;
+using Newtonsoft.Json;
+using System.Globalization;
 using WeatherForecastApp.Data;
 using WeatherForecastApp.Models;
 
@@ -30,28 +30,31 @@ namespace WeatherForecastApp.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to get forecast from OpenWeather for {City}, {Country}.", city, country);
+                _logger.LogError(ex, "Failed to get forecast from OpenWeather for {City}, {Country}, {Date}.", city, country, dateString);
             }
 
-            //try
-            //{
-            //    var weatherApi = await GetWeatherApiForecast(city, country);
-            //    weatherForecasts.Add(weatherApi);
-            //}
-            //catch (Exception ex)
-            //{
-            //    _logger.LogError(ex, "Failed to get forecast from WeatherAPI for {City}, {Country}.", city, country);
-            //}
+            try
+            {
+                var weatherApi = await GetWeatherApiForecast(city, country, dateString);
+                weatherForecasts.WeatherApiResponse = weatherApi;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get forecast from WeatherAPI for {City}, {Country}, {Date}.", city, country, dateString);
+            }
 
-            //try
-            //{
-            //    var visualCrossing = await GetVisualCrossingForecast(city, country);
-            //    weatherForecasts.Add(visualCrossing);
-            //}
-            //catch (Exception ex)
-            //{
-            //    _logger.LogError(ex, "Failed to get forecast from VisualCrossing for {City}, {Country}.", city, country);
-            //}
+            try
+            {
+                var visualCrossing = await GetVisualCrossingForecast(city, country, dateString);
+                weatherForecasts.VisualCrossingResponse = visualCrossing;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get forecast from VisualCrossing for {City}, {Country}, {Date}.", city, country, dateString);
+
+                if(weatherForecasts.OpenWeatherResponse is null && weatherForecasts.WeatherApiResponse is null && weatherForecasts.VisualCrossingResponse is null)
+                    throw new Exception("Could't get data from services.");
+            }
 
             return weatherForecasts;
         }
@@ -70,11 +73,9 @@ namespace WeatherForecastApp.Services
 
             var url = string.Format(_integrationConfigs.OpenWeather5DayApiUrl, coordinates[0].Latitude, coordinates[0].Longitude);
 
-            var response = await client.GetAsync(url);
+            var response = await client.GetStringAsync(url);
 
-            response.EnsureSuccessStatusCode();
-
-            var data = await response.Content.ReadFromJsonAsync<OpenWeatherDailyResponse>();
+            var data = JsonConvert.DeserializeObject<OpenWeatherDailyResponse>(response);
 
             if(!DateTime.TryParse(dateString, out DateTime targetTime))
             {
@@ -94,53 +95,63 @@ namespace WeatherForecastApp.Services
             return result;
         }
 
-        public async Task<OpenWeatherGeoResponse[]?> GetCityCoordinatesAsync(string city, string country)
+        public async Task<List<OpenWeatherGeoResponse>> GetCityCoordinatesAsync(string city, string country)
         {
             using var client = new HttpClient();
             var url = string.Format(_integrationConfigs.OpenWeatherGeoApiUrl, city, country);
             var response = await client.GetStringAsync(url);
 
-            var geoCodingResponse = JsonSerializer.Deserialize<OpenWeatherGeoResponse[]>(response);
+            var geoCodingResponse = JsonConvert.DeserializeObject<List<OpenWeatherGeoResponse>> (response);
 
             return geoCodingResponse;
         }
 
 
-        //private async Task<WeatherForecast> GetWeatherApiForecast(string city, string country)
-        //{
-        //    var client = _httpClientFactory.CreateClient();
-        //    var apiKey = _configuration["WeatherApiKey"];
-        //    var url = $"http://api.weatherapi.com/v1/current.json?key={apiKey}&q={city},{country}&aqi=no";
+        private async Task<WeatherApiResponse> GetWeatherApiForecast(string city, string country, string dateString)
+        {
+            using var client = new HttpClient();
 
-        //    var response = await client.GetAsync(url);
-        //    response.EnsureSuccessStatusCode();
+            var url = string.Format(_integrationConfigs.WeatherApiUrl, city, country);
 
-        //    var data = await response.Content.ReadFromJsonAsync<WeatherApiResponse>();
-        //    return new WeatherForecast
-        //    {
-        //        TemperatureC = data.Current.Temp_C,
-        //        Summary = data.Current.Condition.Text,
-        //        Source = "WeatherAPI"
-        //    };
-        //}
+            var response = await client.GetStringAsync(url);
+            
 
-        //private async Task<WeatherForecast> GetVisualCrossingForecast(string city, string country)
-        //{
-        //    var client = _httpClientFactory.CreateClient();
-        //    var apiKey = _configuration["VisualCrossingApiKey"];
-        //    var url = $"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{city},{country}?unitGroup=metric&key={apiKey}";
+            var data = JsonConvert.DeserializeObject<WeatherApiResponse>(response);
 
-        //    var response = await client.GetAsync(url);
-        //    response.EnsureSuccessStatusCode();
+            if (!DateTime.TryParse(dateString, out DateTime targetTime))
+            {
+                throw new ArgumentException("Invalid date format. It should be in YYYY-MM-DD format.");
+            }
 
-        //    var data = await response.Content.ReadFromJsonAsync<VisualCrossingResponse>();
-        //    return new WeatherForecast
-        //    {
-        //        TemperatureC = data.CurrentConditions.Temp,
-        //        Summary = data.CurrentConditions.Conditions,
-        //        Source = "VisualCrossing"
-        //    };
-        //}
+            //filter the forecast for the specific day
+            var specificDayForecast = data.Forecast.Forecastday
+                .FirstOrDefault(f => f.Date == targetTime.ToString("yyyy-MM-dd"));
+
+            var filteredForecast = new Forecast();
+            filteredForecast.Forecastday.Add(specificDayForecast);
+
+            data.Forecast = filteredForecast;
+
+            return data;
+        }
+
+        private async Task<VisualCrossingResponse> GetVisualCrossingForecast(string city, string country, string dateString)
+        {
+            if (!DateTime.TryParseExact(dateString, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            {
+                throw new ArgumentException("Invalid date format. It should be in YYYY-MM-DD format.");
+            }
+
+            using var client = new HttpClient();
+           
+            var url = string.Format(_integrationConfigs.VisualCrossing, city, country, dateString);
+
+            var response = await client.GetStringAsync(url);
+
+            var data = JsonConvert.DeserializeObject<VisualCrossingResponse>(response);
+
+            return data;
+        }
     }
 
 }
