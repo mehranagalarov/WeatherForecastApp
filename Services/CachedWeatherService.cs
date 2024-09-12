@@ -1,7 +1,10 @@
+using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using WeatherForecastApp.Models;
+using WeatherForecastApp.Services.Interfaces;
 
 namespace WeatherForecastApp.Services
 {
@@ -18,10 +21,10 @@ namespace WeatherForecastApp.Services
             _logger = logger;
         }
 
-        public async Task<IEnumerable<WeatherForecast>> GetWeatherForecast(string city, string country, DateTime date)
+        public async Task<WeatherForecast> GetWeatherForecast(string city, string country, string date)
         {
-            string cacheKey = $"{city}-{country}-{date.ToShortDateString()}";
-            IEnumerable<WeatherForecast> forecasts = null;
+            string cacheKey = $"{city}-{country}-{date}";
+            WeatherForecast forecasts = new WeatherForecast();
 
             try
             {
